@@ -1,4 +1,4 @@
-# app.py – Swing Watchlist Minimalversion (März 2026)
+# app.py – Swing Watchlist – finviz Filter angepasst (März 2026)
 
 import streamlit as st
 from supabase import create_client
@@ -6,63 +6,69 @@ import pandas as pd
 import yfinance as yf
 from finvizfinance.screener.overview import Overview
 
-st.set_page_config(page_title="Swing Watchlist – Minimal", layout="wide")
+st.set_page_config(page_title="Swing Watchlist – Test", layout="wide")
 
-st.title("Swing Watchlist – Testversion")
-st.markdown("Ziel: erstmal nur sehen, ob die App ohne Syntax- und Import-Fehler läuft")
+st.title("Swing Watchlist – Debug & Testversion")
+st.markdown("Aktuell nur minimale Filter, um finvizfinance-Fehler zu umgehen")
 
-# ────────────────────────────────────────────────
-# Supabase – nur zum Testen der Secrets
-# ────────────────────────────────────────────────
-
+# Supabase Test
 try:
     supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
-    st.success("Supabase-Client erfolgreich initialisiert")
+    st.success("Supabase OK")
 except Exception as e:
-    st.error(f"Supabase-Verbindungsfehler:\n{e}")
+    st.error(f"Supabase Fehler: {e}")
     st.stop()
 
 # ────────────────────────────────────────────────
-# Finviz + yfinance – mit korrekter Filter-Methode
+# Daten laden – mit defensiven Filtern
 # ────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
-def load_data(max_tickers=40):
+def load_data(max_tickers=60):
     foverview = Overview()
 
-    # Filter setzen – so wie es finvizfinance aktuell erwartet
-    filters = {
-        'Average Volume': 'Over 1M',
-        'Performance': 'Week'
+    # Sehr konservative Filter – nur solche, die aktuell fast immer gehen
+    safe_filters = {
+        'Average Volume': 'Over 1M',          # meist noch stabil
+        'Market Cap.': 'Mid ($2 - $10B)',     # oft OK
+        'Optionable': 'Yes',                  # hilft, liquide Namen zu bekommen
+        # 'Perf Week': 'Positive'             # oft problematisch → auskommentiert
     }
-    foverview.set_filter(filters_dict=filters)
 
-    # Screener aufrufen – ohne zusätzliche Argumente
-    df_fin = foverview.screener_view()
+    try:
+        foverview.set_filter(filters_dict=safe_filters)
+        df_fin = foverview.screener_view()
+    except Exception as e:
+        st.warning(f"finviz Filter-Fehler: {e}")
+        st.info("Versuche ohne Filter...")
+        df_fin = foverview.screener_view()  # fallback ohne Filter
 
     if df_fin.empty:
-        st.warning("Finviz hat keine Ergebnisse zurückgegeben")
+        st.error("Finviz hat keine Daten zurückgegeben")
         return pd.DataFrame()
+
+    # Nach Performance sortieren (wenn Spalte existiert)
+    if 'Perf Week' in df_fin.columns:
+        df_fin = df_fin.sort_values('Perf Week', ascending=False)
 
     tickers = df_fin['Ticker'].head(max_tickers).tolist()
 
     results = []
     progress = st.progress(0)
-    status_text = st.empty()
+    status = st.empty()
 
-    for idx, ticker in enumerate(tickers):
-        status_text.text(f"Hole Daten: {ticker} ({idx+1}/{len(tickers)})")
-
+    for i, ticker in enumerate(tickers):
+        status.text(f"{ticker} ({i+1}/{len(tickers)})")
         try:
             hist = yf.Ticker(ticker).history(period="1y")
             if len(hist) < 150:
                 continue
 
             close = hist['Close'][-1]
-            sma50  = hist['Close'].rolling(50).mean()[-1]
+            sma50 = hist['Close'].rolling(50).mean()[-1]
             sma150 = hist['Close'].rolling(150).mean()[-1]
 
-            # Sehr einfache ATR-Approximation
+            # ATR manuell
             tr = pd.concat([
                 hist['High'] - hist['Low'],
                 abs(hist['High'] - hist['Close'].shift()),
@@ -72,7 +78,7 @@ def load_data(max_tickers=40):
             atr = tr.rolling(14).mean()[-1] if len(tr) >= 14 else 0
 
             atr_pct = round(atr / close * 100, 1) if close > 0 else 0
-            extension = round((close - sma50) / atr, 1) if atr > 0 else 0
+            ext = round((close - sma50) / atr, 1) if atr > 0 else 0
 
             stage = "2" if close > sma50 > sma150 else "1/3/4"
 
@@ -81,35 +87,21 @@ def load_data(max_tickers=40):
                 'Close': round(close, 2),
                 'Stage': stage,
                 'ATR%': atr_pct,
-                'Ext': extension
+                'Ext': ext
             })
+        except:
+            pass
 
-        except Exception:
-            pass  # Ein Ticker fehlschlägt → weiter
+        progress.progress((i + 1) / len(tickers))
 
-        progress.progress((idx + 1) / len(tickers))
-
-    status_text.text("Fertig")
+    status.text("Fertig")
     progress.empty()
 
     return pd.DataFrame(results)
 
 # ────────────────────────────────────────────────
-# Haupt-Button
+# UI
 # ────────────────────────────────────────────────
 
-if st.button("Daten laden (max. 40 Ticker)", type="primary"):
-    df = load_data()
-
-    if df.empty:
-        st.warning("Keine verwertbaren Daten erhalten")
-    else:
-        st.success(f"{len(df)} Aktien geladen")
-        st.dataframe(
-            df.sort_values('Ext', ascending=False),
-            use_container_width=True,
-            hide_index=True
-        )
-
-st.markdown("---")
-st.caption("Minimalversion – ohne Gruppierung, Farben, Reward:Risk – nur zum Testen der Basics")
+if st.button("Daten laden (max. 60 Ticker)", type="primary"):
+    df = load_data
