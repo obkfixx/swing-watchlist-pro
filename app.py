@@ -1,4 +1,4 @@
-# app.py – Swing Watchlist – Debug & Minimal (März 2026)
+# app.py – Swing Watchlist – Debug-Version mit vollständigen Strings (13. März 2026)
 
 import streamlit as st
 from supabase import create_client
@@ -10,64 +10,57 @@ import traceback
 st.set_page_config(page_title="Swing Watchlist Debug", layout="wide")
 
 st.title("Swing Watchlist – Debug-Modus")
-st.markdown("**Ziel:** Sehen, ob der Code überhaupt läuft und wo es hängen bleibt")
+st.markdown("Ziel: Schritt-für-Schritt sehen, wo der Code hängen bleibt")
 
-# ────────────────────────────────────────────────
-# Supabase – nur Test
-# ────────────────────────────────────────────────
-
-st.subheader("1. Supabase-Verbindung")
+# Supabase-Verbindung prüfen
+st.subheader("Supabase-Verbindung")
 try:
     supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
-    st.success("Supabase-Client OK")
+    st.success("Supabase-Client erfolgreich erstellt")
 except Exception as e:
-    st.error(f"Supabase-Fehler: {str(e)}")
+    st.error(f"Supabase-Verbindungsfehler: {str(e)}")
     st.stop()
 
 # ────────────────────────────────────────────────
-# Daten laden – mit maximalem Debugging
+# Daten-Ladefunktion (ohne Cache zum Debuggen)
 # ────────────────────────────────────────────────
 
-def load_data(max_tickers=30):  # ← Cache absichtlich entfernt zum Debug
-    st.write("→ load_data() gestartet")
+def load_data(max_tickers=25):
+    st.write("Funktion load_data() wurde gestartet")
 
     try:
         foverview = Overview()
         st.write("Finviz Overview-Objekt erstellt")
 
-        # Sehr konservative Filter
+        # Sehr minimale Filter – nur das, was meistens funktioniert
         filters = {
-            'Average Volume': 'Over 500K',   # etwas niedriger → mehr Ergebnisse
-            'Market Cap.': 'Mid ($2 - $10B)',
+            'Average Volume': 'Over 500K',
         }
-        st.write(f"Filter setzen: {filters}")
+        st.write("Filter, die gesetzt werden sollen:", filters)
 
         foverview.set_filter(filters_dict=filters)
-        st.write("Filter erfolgreich gesetzt")
+        st.write("Filter wurden gesetzt")
 
         df_fin = foverview.screener_view()
-        st.write(f"Finviz-Screener zurückgegeben: {len(df_fin)} Zeilen")
+        st.write("screener_view() aufgerufen – Ergebniszeilen:", len(df_fin))
 
         if df_fin.empty:
-            st.warning("Finviz hat leere Tabelle zurückgegeben → Fallback ohne Filter")
-            df_fin = foverview.screener_view()  # ohne Filter
-
-        if df_fin.empty:
-            st.error("Auch ohne Filter leer – Finviz-Problem?")
-            return pd.DataFrame()
+            st.warning("Finviz-Tabelle leer → versuche ohne Filter")
+            df_fin = foverview.screener_view()
 
         tickers = df_fin['Ticker'].head(max_tickers).tolist()
-        st.write(f"{len(tickers)} Ticker ausgewählt")
+        st.write("Anzahl ausgewählter Ticker:", len(tickers))
 
         results = []
         progress = st.progress(0)
 
         for i, ticker in enumerate(tickers):
-            st.write(f"  Verarbeite {ticker} ({i+1}/{len(tickers)})")
+            st.write(f"→ Verarbeite Ticker {i+1}/{len(tickers)}: {ticker}")
+
             try:
                 hist = yf.Ticker(ticker).history(period="1y")
                 if len(hist) < 150:
-                    st.write(f"    {ticker}: zu wenig Daten → überspringen")
+                    st.write(f"  → Zu wenige Daten für {ticker}")
                     continue
 
                 close = hist['Close'][-1]
@@ -95,15 +88,15 @@ def load_data(max_tickers=30):  # ← Cache absichtlich entfernt zum Debug
                     'Ext': ext
                 })
 
-                st.write(f"    {ticker} erfolgreich verarbeitet")
+                st.write(f"  → {ticker} erfolgreich verarbeitet")
 
-            except Exception as e:
-                st.write(f"    Fehler bei {ticker}: {str(e)}")
+            except Exception as ex:
+                st.write(f"  → Fehler bei {ticker}: {str(ex)}")
 
             progress.progress((i + 1) / len(tickers))
 
         progress.empty()
-        st.write("→ load_data() beendet")
+        st.write("load_data() abgeschlossen – Ergebnisse:", len(results))
         return pd.DataFrame(results)
 
     except Exception as e:
@@ -112,10 +105,18 @@ def load_data(max_tickers=30):  # ← Cache absichtlich entfernt zum Debug
         return pd.DataFrame()
 
 # ────────────────────────────────────────────────
-# Haupt-Button mit vollem Try-Except
+# Button mit maximaler Sichtbarkeit
 # ────────────────────────────────────────────────
 
-st.subheader("2. Daten laden")
+st.subheader("Daten laden testen")
 
-if st.button("Daten laden (max. 30 Ticker)", type="primary"):
-    st.write("Button wurde gek
+if st.button("Daten laden (max. 25 Ticker)", type="primary"):
+    st.markdown("**Button wurde gedrückt – Verarbeitung startet**")
+    st.write("Aktueller Zeitpunkt:", pd.Timestamp.now())
+
+    try:
+        df = load_data()
+        st.write("Funktion load_data() ist zurückgekehrt")
+
+        if df.empty:
+            st.warning
