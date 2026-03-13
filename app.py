@@ -1,66 +1,56 @@
-# app.py – Swing Watchlist – Debug-Version mit vollständigen Strings (13. März 2026)
+# app.py – Swing Watchlist – Debug & Minimal – alle try/except vollständig (13. März 2026)
 
 import streamlit as st
 from supabase import create_client
 import pandas as pd
 import yfinance as yf
 from finvizfinance.screener.overview import Overview
-import traceback
 
 st.set_page_config(page_title="Swing Watchlist Debug", layout="wide")
 
 st.title("Swing Watchlist – Debug-Modus")
 st.markdown("Ziel: Schritt-für-Schritt sehen, wo der Code hängen bleibt")
 
-# Supabase-Verbindung prüfen
-st.subheader("Supabase-Verbindung")
+# Supabase prüfen
+st.subheader("1. Supabase-Verbindung")
 try:
     supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
-    st.success("Supabase-Client erfolgreich erstellt")
+    st.success("Supabase-Verbindung OK")
 except Exception as e:
-    st.error(f"Supabase-Verbindungsfehler: {str(e)}")
+    st.error(f"Supabase-Fehler: {str(e)}")
     st.stop()
 
 # ────────────────────────────────────────────────
-# Daten-Ladefunktion (ohne Cache zum Debuggen)
+# Daten laden – ohne Cache, viele Statusmeldungen
 # ────────────────────────────────────────────────
 
-def load_data(max_tickers=25):
-    st.write("Funktion load_data() wurde gestartet")
+def load_data(max_tickers=20):
+    st.write("load_data() wurde aufgerufen")
+
+    results = []
+    progress = st.progress(0)
 
     try:
+        st.write("Versuche Finviz-Screener ohne Filter (sicherste Variante)")
         foverview = Overview()
-        st.write("Finviz Overview-Objekt erstellt")
-
-        # Sehr minimale Filter – nur das, was meistens funktioniert
-        filters = {
-            'Average Volume': 'Over 500K',
-        }
-        st.write("Filter, die gesetzt werden sollen:", filters)
-
-        foverview.set_filter(filters_dict=filters)
-        st.write("Filter wurden gesetzt")
-
         df_fin = foverview.screener_view()
-        st.write("screener_view() aufgerufen – Ergebniszeilen:", len(df_fin))
+
+        st.write(f"Finviz hat {len(df_fin)} Zeilen zurückgegeben")
 
         if df_fin.empty:
-            st.warning("Finviz-Tabelle leer → versuche ohne Filter")
-            df_fin = foverview.screener_view()
+            st.warning("Finviz-Tabelle ist leer – Abbruch")
+            return pd.DataFrame()
 
         tickers = df_fin['Ticker'].head(max_tickers).tolist()
-        st.write("Anzahl ausgewählter Ticker:", len(tickers))
-
-        results = []
-        progress = st.progress(0)
+        st.write(f"{len(tickers)} Ticker ausgewählt")
 
         for i, ticker in enumerate(tickers):
-            st.write(f"→ Verarbeite Ticker {i+1}/{len(tickers)}: {ticker}")
+            st.write(f"Verarbeite {ticker} ({i+1}/{len(tickers)})")
 
             try:
                 hist = yf.Ticker(ticker).history(period="1y")
                 if len(hist) < 150:
-                    st.write(f"  → Zu wenige Daten für {ticker}")
+                    st.write(f"  {ticker}: zu wenige Daten → überspringen")
                     continue
 
                 close = hist['Close'][-1]
@@ -88,35 +78,13 @@ def load_data(max_tickers=25):
                     'Ext': ext
                 })
 
-                st.write(f"  → {ticker} erfolgreich verarbeitet")
+                st.write(f"  {ticker} OK")
 
-            except Exception as ex:
-                st.write(f"  → Fehler bei {ticker}: {str(ex)}")
+            except Exception as inner_e:
+                st.write(f"  Fehler bei {ticker}: {str(inner_e)}")
 
             progress.progress((i + 1) / len(tickers))
 
         progress.empty()
-        st.write("load_data() abgeschlossen – Ergebnisse:", len(results))
-        return pd.DataFrame(results)
-
-    except Exception as e:
-        st.error(f"Schwerer Fehler in load_data(): {str(e)}")
-        st.code(traceback.format_exc())
-        return pd.DataFrame()
-
-# ────────────────────────────────────────────────
-# Button mit maximaler Sichtbarkeit
-# ────────────────────────────────────────────────
-
-st.subheader("Daten laden testen")
-
-if st.button("Daten laden (max. 25 Ticker)", type="primary"):
-    st.markdown("**Button wurde gedrückt – Verarbeitung startet**")
-    st.write("Aktueller Zeitpunkt:", pd.Timestamp.now())
-
-    try:
-        df = load_data()
-        st.write("Funktion load_data() ist zurückgekehrt")
-
-        if df.empty:
-            st.warning
+        st.write(f"load_data() fertig – {len(results)} Ergebnisse")
+        return pd.Data
