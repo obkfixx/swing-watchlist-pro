@@ -1,16 +1,16 @@
-# app.py – Supabase Verbindungstest (Cloud-only)
+# app.py – Supabase Insert + Select Test (Version 2)
 
 import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime
 
-st.set_page_config(page_title="Swing Watchlist – Supabase Test", layout="wide")
+st.set_page_config(page_title="Swing Watchlist – Supabase Test v2", layout="wide")
 
-st.title("Swing Watchlist – Supabase Verbindungstest")
-st.markdown("Aktueller Stand: App läuft auf Streamlit Cloud + Secrets sind hinterlegt")
+st.title("Swing Watchlist – Supabase Test Phase 2")
+st.markdown("Ziel: Schreiben und Lesen in `watchlists` testen")
 
 # ────────────────────────────────────────────────
-# Supabase Client initialisieren
+# Supabase Client (cached)
 # ────────────────────────────────────────────────
 
 @st.cache_resource
@@ -22,64 +22,63 @@ def get_supabase_client():
         )
         return client
     except Exception as e:
-        st.error(f"Fehler beim Erstellen des Supabase-Clients:\n{e}")
-        st.stop()
+        st.error(f"Client-Initialisierung fehlgeschlagen:\n{e}")
         return None
 
 supabase = get_supabase_client()
 
 if supabase:
-    st.success("✅ Supabase-Client erfolgreich initialisiert")
+    st.success("Supabase-Client bereit ✓")
+else:
+    st.stop()
 
 # ────────────────────────────────────────────────
-# Test-Insert in watchlists
+# Test-Insert
 # ────────────────────────────────────────────────
 
-st.subheader("1. Test-Eintrag in watchlists schreiben")
+st.subheader("A – Neue Test-Watchlist schreiben")
 
-if st.button("→ Test-Watchlist erstellen"):
-    try:
-        test_data = {
-            "name": f"Test {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "tickers": ["TESTA", "TESTB", "DEMO"],
-            # user_id bewusst weggelassen → nur wenn RLS aus ist oder Policy passt
-        }
+watchlist_name = st.text_input("Name der Watchlist", "Testliste " + datetime.now().strftime("%Y-%m-%d %H:%M"))
 
-        response = supabase.table("watchlists").insert(test_data).execute()
+if st.button("→ Watchlist speichern"):
+    if not watchlist_name.strip():
+        st.warning("Bitte einen Namen eingeben")
+    else:
+        try:
+            data = {
+                "name": watchlist_name,
+                "tickers": ["AAPL", "NVDA", "TSLA", "TEST" + str(datetime.now().second)],
+                "created_at": datetime.utcnow().isoformat()
+            }
+            response = supabase.table("watchlists").insert(data).execute()
 
-        if response.data:
-            st.success("Eintrag erfolgreich geschrieben")
-            st.json(response.data[0])
-        else:
-            st.warning("Insert lief, aber response.data ist leer")
+            if response.data:
+                st.success(f"Gespeichert! Neue ID: {response.data[0]['id']}")
+                st.json(response.data[0])
+            else:
+                st.warning("Insert lief, aber keine Daten zurückbekommen")
 
-    except Exception as e:
-        st.error(f"Insert fehlgeschlagen\n\n{str(e)}")
+        except Exception as e:
+            st.error(f"Insert Fehler:\n{str(e)}")
 
 # ────────────────────────────────────────────────
-# Alle Einträge aus watchlists anzeigen
+# Alle Einträge laden + anzeigen
 # ────────────────────────────────────────────────
 
-st.subheader("2. watchlists Tabelle anzeigen")
+st.subheader("B – Alle gespeicherten Watchlists anzeigen")
 
 if st.button("→ Alle Einträge laden"):
     try:
         response = supabase.table("watchlists").select("*").execute()
 
         if response.data:
+            st.success(f"{len(response.data)} Einträge gefunden")
             st.dataframe(response.data)
         else:
-            st.info("Keine Einträge vorhanden (Tabelle leer)")
+            st.info("Noch keine Einträge in der Tabelle")
 
     except Exception as e:
-        st.error(f"Select fehlgeschlagen\n\n{str(e)}")
+        st.error(f"Select Fehler:\n{str(e)}")
 
-# Hinweise
 st.markdown("---")
-st.caption("""
-**Wichtige Hinweise zum aktuellen Stand**
-• Wenn Insert oder Select fehlschlägt → meist Row Level Security (RLS)
-• Lösung zum Testen: RLS für watchlists kurz deaktivieren
-  → Supabase Dashboard → Authentication → Policies → watchlists → Enable RLS ausschalten
-• Später bauen wir eine richtige Policy mit auth.uid()
-""")
+st.caption("Nächster Schritt (nach erfolgreichem Test): finvizfinance + yfinance + erste Industry-Gruppierung")
