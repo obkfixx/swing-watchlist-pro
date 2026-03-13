@@ -1,4 +1,4 @@
-# app.py – Swing Watchlist mit Finviz + yfinance (ATR manuell)
+# app.py – Swing Watchlist mit Finviz + yfinance (ATR manuell, kein pandas_ta)
 
 import streamlit as st
 from supabase import create_client, Client
@@ -39,7 +39,7 @@ else:
 # Watchlist-Daten laden
 # ────────────────────────────────────────────────
 
-@st.cache_data(ttl=1800)  # 30 Minuten
+@st.cache_data(ttl=1800)  # 30 Minuten Cache
 def get_watchlist_data(max_tickers=80):
     foverview = Overview()
     df_fin = foverview.screener_view(
@@ -57,7 +57,6 @@ def get_watchlist_data(max_tickers=80):
     status = st.empty()
 
     for i, ticker in enumerate(tickers):
-        # ←─── HIER WAR DER FEHLER ────
         status.text(f"Daten für {ticker} ({i+1}/{len(tickers)})")
 
         try:
@@ -128,29 +127,4 @@ if st.button("→ Watchlist laden (Finviz Top-Performer)", type="primary"):
 
         for industry, group in grouped:
             count = len(group)
-            with st.expander(f"**{industry}** ({count})", expanded=(count >= 4)):
-                group_sorted = group.sort_values('R:R', ascending=False).reset_index(drop=True)
-
-                def color_ext(v):
-                    if pd.isna(v): return ''
-                    if v > 7:   return 'background-color: #ffcccc; color: #c00000'
-                    if v > 5:   return 'background-color: #ffccff; color: #800080'
-                    return ''
-
-                styled = group_sorted.style\
-                    .applymap(color_ext, subset=['Ext'])\
-                    .format(precision=1, na_rep="—")\
-                    .set_properties(**{'text-align': 'right'}, subset=['ATR%', 'Ext', 'R:R', 'Close'])
-
-                st.dataframe(styled, use_container_width=True, hide_index=True)
-
-# Gespeicherte Listen (optional)
-st.subheader("Gespeicherte Watchlists")
-if st.button("→ Listen laden"):
-    res = supabase.table("watchlists").select("*").execute()
-    if res.data:
-        st.dataframe(res.data)
-    else:
-        st.info("Noch nichts gespeichert")
-
-st.caption("Fe
+            with st.expander(f"
