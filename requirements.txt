@@ -3,4 +3,3 @@ supabase>=2.0.0
 finvizfinance>=0.14.0
 yfinance>=0.2.40
 pandas>=2.0.0
-pandas_ta>=0.3.14b0
