@@ -1,4 +1,4 @@
-# app.py – Swing Watchlist (minimal, sauber, ohne pandas_ta)
+# app.py – Swing Watchlist Minimalversion (März 2026)
 
 import streamlit as st
 from supabase import create_client
@@ -6,33 +6,53 @@ import pandas as pd
 import yfinance as yf
 from finvizfinance.screener.overview import Overview
 
-st.set_page_config(page_title="Swing Watchlist", layout="wide")
+st.set_page_config(page_title="Swing Watchlist – Minimal", layout="wide")
 
-st.title("Swing Watchlist – Testversion März 2026")
-
-# Supabase nur zum Testen
-supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
-st.success("Supabase-Client initialisiert")
+st.title("Swing Watchlist – Testversion")
+st.markdown("Ziel: erstmal nur sehen, ob die App ohne Syntax- und Import-Fehler läuft")
 
 # ────────────────────────────────────────────────
-# Daten laden – sehr einfach gehalten
+# Supabase – nur zum Testen der Secrets
+# ────────────────────────────────────────────────
+
+try:
+    supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
+    st.success("Supabase-Client erfolgreich initialisiert")
+except Exception as e:
+    st.error(f"Supabase-Verbindungsfehler:\n{e}")
+    st.stop()
+
+# ────────────────────────────────────────────────
+# Finviz + yfinance – mit korrekter Filter-Methode
 # ────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
-def load_data(max_tickers=50):
+def load_data(max_tickers=40):
     foverview = Overview()
-    df = foverview.screener_view(
-        filters_dict={
-            'Average Volume': 'Over 1M',
-            'Performance': 'Week'
-        }
-    )
-    tickers = df['Ticker'].head(max_tickers).tolist()
+
+    # Filter setzen – so wie es finvizfinance aktuell erwartet
+    filters = {
+        'Average Volume': 'Over 1M',
+        'Performance': 'Week'
+    }
+    foverview.set_filter(filters_dict=filters)
+
+    # Screener aufrufen – ohne zusätzliche Argumente
+    df_fin = foverview.screener_view()
+
+    if df_fin.empty:
+        st.warning("Finviz hat keine Ergebnisse zurückgegeben")
+        return pd.DataFrame()
+
+    tickers = df_fin['Ticker'].head(max_tickers).tolist()
 
     results = []
     progress = st.progress(0)
+    status_text = st.empty()
 
-    for i, ticker in enumerate(tickers):
+    for idx, ticker in enumerate(tickers):
+        status_text.text(f"Hole Daten: {ticker} ({idx+1}/{len(tickers)})")
+
         try:
             hist = yf.Ticker(ticker).history(period="1y")
             if len(hist) < 150:
@@ -42,7 +62,7 @@ def load_data(max_tickers=50):
             sma50  = hist['Close'].rolling(50).mean()[-1]
             sma150 = hist['Close'].rolling(150).mean()[-1]
 
-            # ganz einfache ATR-Approximation
+            # Sehr einfache ATR-Approximation
             tr = pd.concat([
                 hist['High'] - hist['Low'],
                 abs(hist['High'] - hist['Close'].shift()),
@@ -52,7 +72,7 @@ def load_data(max_tickers=50):
             atr = tr.rolling(14).mean()[-1] if len(tr) >= 14 else 0
 
             atr_pct = round(atr / close * 100, 1) if close > 0 else 0
-            ext = round((close - sma50) / atr, 1) if atr > 0 else 0
+            extension = round((close - sma50) / atr, 1) if atr > 0 else 0
 
             stage = "2" if close > sma50 > sma150 else "1/3/4"
 
@@ -61,32 +81,35 @@ def load_data(max_tickers=50):
                 'Close': round(close, 2),
                 'Stage': stage,
                 'ATR%': atr_pct,
-                'Ext': ext
+                'Ext': extension
             })
-        except:
-            pass
 
-        progress.progress((i+1) / len(tickers))
+        except Exception:
+            pass  # Ein Ticker fehlschlägt → weiter
+
+        progress.progress((idx + 1) / len(tickers))
+
+    status_text.text("Fertig")
+    progress.empty()
 
     return pd.DataFrame(results)
 
 # ────────────────────────────────────────────────
-# Button & Ausgabe
+# Haupt-Button
 # ────────────────────────────────────────────────
 
-if st.button("Daten laden (50 Ticker)", type="primary"):
-    with st.spinner("Lade Daten …"):
-        df = load_data()
+if st.button("Daten laden (max. 40 Ticker)", type="primary"):
+    df = load_data()
 
     if df.empty:
-        st.warning("Keine Daten erhalten")
+        st.warning("Keine verwertbaren Daten erhalten")
     else:
         st.success(f"{len(df)} Aktien geladen")
-
         st.dataframe(
             df.sort_values('Ext', ascending=False),
             use_container_width=True,
             hide_index=True
         )
 
-st.caption("Minimalversion – ohne Industry-Gruppierung & Farben – nur um Syntax & Laufzeit zu prüfen")
+st.markdown("---")
+st.caption("Minimalversion – ohne Gruppierung, Farben, Reward:Risk – nur zum Testen der Basics")
