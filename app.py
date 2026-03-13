@@ -1,70 +1,92 @@
-# app.py – Swing Watchlist mit Finviz + yfinance (ATR manuell, saubere Syntax)
+# app.py – Swing Watchlist (minimal, sauber, ohne pandas_ta)
 
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 import pandas as pd
 import yfinance as yf
 from finvizfinance.screener.overview import Overview
-from datetime import datetime
 
-st.set_page_config(page_title="Swing Watchlist Pro", layout="wide")
+st.set_page_config(page_title="Swing Watchlist", layout="wide")
 
-st.title("Swing Watchlist – Stage 2 + ATR + Extension")
-st.caption("Manuelle ATR-Berechnung – kompatibel mit Python 3.14 / Streamlit Cloud")
+st.title("Swing Watchlist – Testversion März 2026")
 
-# ────────────────────────────────────────────────
-# Supabase Client
-# ────────────────────────────────────────────────
-
-@st.cache_resource
-def get_supabase_client():
-    try:
-        client = create_client(
-            st.secrets["supabase"]["url"],
-            st.secrets["supabase"]["key"]
-        )
-        return client
-    except Exception as e:
-        st.error(f"Supabase-Client konnte nicht initialisiert werden:\n{e}")
-        return None
-
-supabase = get_supabase_client()
-
-if supabase:
-    st.success("Supabase-Verbindung steht ✓")
-else:
-    st.stop()
+# Supabase nur zum Testen
+supabase = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
+st.success("Supabase-Client initialisiert")
 
 # ────────────────────────────────────────────────
-# Daten laden und berechnen
+# Daten laden – sehr einfach gehalten
 # ────────────────────────────────────────────────
 
-@st.cache_data(ttl=1800)  # 30 Minuten Cache
-def get_watchlist_data(max_tickers=80):
+@st.cache_data(ttl=3600)
+def load_data(max_tickers=50):
     foverview = Overview()
-    df_fin = foverview.screener_view(
+    df = foverview.screener_view(
         filters_dict={
             'Average Volume': 'Over 1M',
-            'Market Cap.': 'Mid ($2 - $10B)+',
             'Performance': 'Week'
         }
     )
+    tickers = df['Ticker'].head(max_tickers).tolist()
 
-    tickers = df_fin['Ticker'].head(max_tickers).tolist()
-
-    data = []
+    results = []
     progress = st.progress(0)
-    status = st.empty()
 
     for i, ticker in enumerate(tickers):
-        status.text(f"Daten für {ticker} ({i+1}/{len(tickers)})")
-
         try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1y", auto_adjust=True)
-            if len(hist) < 160:
+            hist = yf.Ticker(ticker).history(period="1y")
+            if len(hist) < 150:
                 continue
 
-            close = hist['Close'].iloc[-1]
-            sma50 = hist['Close'].rolling(50).mean().iloc[-1]
-            sma150 =
+            close = hist['Close'][-1]
+            sma50  = hist['Close'].rolling(50).mean()[-1]
+            sma150 = hist['Close'].rolling(150).mean()[-1]
+
+            # ganz einfache ATR-Approximation
+            tr = pd.concat([
+                hist['High'] - hist['Low'],
+                abs(hist['High'] - hist['Close'].shift()),
+                abs(hist['Low'] - hist['Close'].shift())
+            ], axis=1).max(axis=1)
+
+            atr = tr.rolling(14).mean()[-1] if len(tr) >= 14 else 0
+
+            atr_pct = round(atr / close * 100, 1) if close > 0 else 0
+            ext = round((close - sma50) / atr, 1) if atr > 0 else 0
+
+            stage = "2" if close > sma50 > sma150 else "1/3/4"
+
+            results.append({
+                'Ticker': ticker,
+                'Close': round(close, 2),
+                'Stage': stage,
+                'ATR%': atr_pct,
+                'Ext': ext
+            })
+        except:
+            pass
+
+        progress.progress((i+1) / len(tickers))
+
+    return pd.DataFrame(results)
+
+# ────────────────────────────────────────────────
+# Button & Ausgabe
+# ────────────────────────────────────────────────
+
+if st.button("Daten laden (50 Ticker)", type="primary"):
+    with st.spinner("Lade Daten …"):
+        df = load_data()
+
+    if df.empty:
+        st.warning("Keine Daten erhalten")
+    else:
+        st.success(f"{len(df)} Aktien geladen")
+
+        st.dataframe(
+            df.sort_values('Ext', ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
+
+st.caption("Minimalversion – ohne Industry-Gruppierung & Farben – nur um Syntax & Laufzeit zu prüfen")
